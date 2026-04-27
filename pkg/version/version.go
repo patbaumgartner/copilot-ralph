@@ -3,7 +3,12 @@
 // Version information is set at build time using ldflags:
 //
 //	go build -ldflags "-X github.com/patbaumgartner/copilot-ralph/pkg/version.Version=1.0.0"
+//
+// When built via "go install" (no ldflags), the module version embedded by the
+// Go toolchain is read from runtime/debug.ReadBuildInfo as a fallback.
 package version
+
+import "runtime/debug"
 
 // Build-time variables set via ldflags
 var (
@@ -19,6 +24,34 @@ var (
 	// GoVersion is the Go version used to build
 	GoVersion = "unknown"
 )
+
+func init() {
+	if Version != "dev" {
+		return
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return
+	}
+	if v := info.Main.Version; v != "" && v != "(devel)" {
+		Version = v
+	}
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			if len(s.Value) > 7 {
+				Commit = s.Value[:7]
+			} else {
+				Commit = s.Value
+			}
+		case "vcs.time":
+			BuildDate = s.Value
+		}
+	}
+	if info.GoVersion != "" {
+		GoVersion = info.GoVersion
+	}
+}
 
 // Info contains version information
 type Info struct {

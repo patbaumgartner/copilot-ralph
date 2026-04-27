@@ -31,6 +31,8 @@ const (
 	StateRunning LoopState = "running"
 	// StateComplete indicates the loop completed successfully.
 	StateComplete LoopState = "complete"
+	// StateBlocked indicates the model signalled it cannot proceed.
+	StateBlocked LoopState = "blocked"
 	// StateFailed indicates the loop failed.
 	StateFailed LoopState = "failed"
 	// StateCancelled indicates the loop was cancelled.
@@ -153,6 +155,27 @@ type LoopConfig struct {
 	// fatal instead of pausing the loop until reset.
 	NoRateLimitWait bool
 
+	// BlockedPhrase, when non-empty, makes the engine watch for
+	// <blocked>...</blocked> in every assistant response. When detected the
+	// loop stops with StateBlocked (exit code 5).
+	BlockedPhrase string
+
+	// StallAfter, when > 0, stops the loop after this many consecutive
+	// iterations that produce an identical (byte-for-byte) assistant
+	// response. Protects against models stuck in a non-progressing loop.
+	StallAfter int
+
+	// IterationDelay is a pause inserted between iterations. <=0 disables.
+	IterationDelay time.Duration
+
+	// OnCompleteCmd is a shell command executed after a successful loop
+	// (promise detected). Empty disables the hook.
+	OnCompleteCmd string
+
+	// OnBlockedCmd is a shell command executed when the model emits the
+	// blocked signal. Empty disables the hook.
+	OnBlockedCmd string
+
 	MaxIterations int
 	Timeout       time.Duration
 	DryRun        bool
@@ -211,6 +234,13 @@ type LoopEngine struct {
 	// lastOracleAdvice holds the most recent oracle advice. It is folded
 	// into the next iteration's prompt and cleared after consumption.
 	lastOracleAdvice string
+
+	// lastResponse holds the complete assistant response from the previous
+	// iteration, used by stall detection to compare consecutive outputs.
+	lastResponse string
+	// consecutiveStalls counts how many iterations in a row produced the
+	// same response text as the previous iteration.
+	consecutiveStalls int
 
 	// oracle is the optional second-opinion client. nil disables.
 	oracle OracleClient
@@ -305,4 +335,21 @@ type LoopResult struct {
 	State      LoopState
 	Iterations int
 	Duration   time.Duration
+}
+
+// blocked transitions the engine to StateBlocked and returns a LoopResult.
+func (e *LoopEngine) blocked() (*LoopResult, error) {
+	e.mu.Lock()
+	e.state = StateBlocked
+	iterations := e.iteration
+	e.mu.Unlock()
+
+	result := &LoopResult{
+		State:      StateBlocked,
+		Iterations: iterations,
+		Duration:   time.Since(e.startTime),
+		Error:      ErrLoopBlocked,
+	}
+	e.emit(NewLoopFailedEvent(ErrLoopBlocked, result))
+	return result, nil
 }

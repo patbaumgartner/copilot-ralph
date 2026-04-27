@@ -41,4 +41,5 @@ func init() {
 	rootCmd.AddCommand(resumeCmd)
 	rootCmd.AddCommand(resetCmd)
 	rootCmd.AddCommand(doctorCmd)
+	rootCmd.AddCommand(completionCmd)
 }

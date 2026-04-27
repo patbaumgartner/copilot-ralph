@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-27
+
+### Added
+
+#### Env-var overrides
+
+- All major flags now read a `RALPH_*` environment variable as their default
+  so Ralph can be configured without repeating flags on every invocation.
+  Supported variables: `RALPH_MAX_ITERATIONS`, `RALPH_TIMEOUT`,
+  `RALPH_ITERATION_TIMEOUT`, `RALPH_PROMISE`, `RALPH_MODEL`,
+  `RALPH_WORKING_DIR`, `RALPH_STREAMING`, `RALPH_SYSTEM_PROMPT`,
+  `RALPH_CARRY_CONTEXT`, `RALPH_NO_RATE_LIMIT_WAIT`, `RALPH_VERIFY_CMD`,
+  `RALPH_CHECKPOINT_FILE`, `RALPH_ORACLE_MODEL`, `RALPH_BLOCKED_PHRASE`,
+  `RALPH_STALL_AFTER`, `RALPH_ITERATION_DELAY`, `RALPH_ON_COMPLETE`,
+  `RALPH_ON_BLOCKED`.
+
+#### Shell completions
+
+- `ralph completion <shell>` — generate shell completion scripts for
+  `bash`, `zsh`, `fish`, and `powershell`.
+
+#### Blocked signal
+
+- `--blocked-phrase` — when non-empty, the engine watches every assistant
+  response for `<blocked>...</blocked>` wrapping that phrase. When detected,
+  the loop stops immediately with a new **exit code 5** (`StateBlocked`) and a
+  `BlockedPhraseDetectedEvent` is emitted. The `--on-blocked` hook fires.
+  Set `RALPH_BLOCKED_PHRASE` to configure without flags.
+
+#### Stall detection
+
+- `--stall-after N` — halt the loop after N consecutive iterations that
+  produce byte-for-byte identical assistant responses (whitespace trimmed).
+  Protects against models stuck in a repeating non-progressing loop.
+  Default `0` disables. Set `RALPH_STALL_AFTER` to configure without flags.
+
+#### Iteration delay
+
+- `--iteration-delay` — configurable pause inserted between iterations.
+  Useful for pacing API calls or giving external systems time to settle.
+  Respects context cancellation. Default `0` disables.
+  Set `RALPH_ITERATION_DELAY` to configure without flags.
+
+#### Stdin prompt
+
+- `ralph run -` — pass `-` as the prompt argument to read the prompt from
+  standard input. Enables pipeline usage:
+  `echo "fix the linter" | ralph run -`
+
+#### Lifecycle hooks
+
+- `--on-complete <cmd>` — shell command executed after the loop completes
+  successfully (promise detected). The hook receives `RALPH_STATE` and
+  `RALPH_ITERATIONS` environment variables. Errors are printed as warnings
+  and do not alter Ralph's exit code. Set `RALPH_ON_COMPLETE` to configure
+  without flags.
+- `--on-blocked <cmd>` — same as `--on-complete` but runs when the model
+  emits the blocked signal. Set `RALPH_ON_BLOCKED` to configure without flags.
+
 ## [0.1.0] - 2026-04-27
 
 ### Added
@@ -119,5 +178,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ralph version`: print build metadata (version, commit, build date,
   Go version).
 
-[Unreleased]: https://github.com/patbaumgartner/copilot-ralph/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/patbaumgartner/copilot-ralph/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/patbaumgartner/copilot-ralph/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/patbaumgartner/copilot-ralph/releases/tag/v0.1.0

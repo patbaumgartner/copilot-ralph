@@ -88,6 +88,10 @@ ralph run "Add unit tests for the parser module"
 # Markdown file as prompt
 ralph run task.md
 
+# Read the prompt from stdin
+echo "Fix all TODO comments" | ralph run -
+cat task.md | ralph run -
+
 # Cap iterations and runtime
 ralph run --max-iterations 5 --timeout 10m "Refactor the auth module"
 
@@ -103,6 +107,27 @@ ralph run --dry-run "Implement OAuth"
 
 ## Features
 
+### Env-var overrides
+
+Every major flag reads a `RALPH_*` environment variable as its default, so
+Ralph can be configured once (e.g. in a `.env` file or CI secret) without
+repeating flags on every invocation.
+
+```bash
+export RALPH_MAX_ITERATIONS=20
+export RALPH_VERIFY_CMD="make test"
+export RALPH_ON_COMPLETE="./scripts/notify.sh"
+ralph run "Implement the feature"
+```
+
+Supported variables: `RALPH_MAX_ITERATIONS`, `RALPH_TIMEOUT`,
+`RALPH_ITERATION_TIMEOUT`, `RALPH_PROMISE`, `RALPH_MODEL`,
+`RALPH_WORKING_DIR`, `RALPH_STREAMING`, `RALPH_SYSTEM_PROMPT`,
+`RALPH_CARRY_CONTEXT`, `RALPH_NO_RATE_LIMIT_WAIT`, `RALPH_VERIFY_CMD`,
+`RALPH_CHECKPOINT_FILE`, `RALPH_ORACLE_MODEL`, `RALPH_BLOCKED_PHRASE`,
+`RALPH_STALL_AFTER`, `RALPH_ITERATION_DELAY`, `RALPH_ON_COMPLETE`,
+`RALPH_ON_BLOCKED`.
+
 ### Loop control
 
 | Flag | Default | Purpose |
@@ -112,6 +137,8 @@ ralph run --dry-run "Implement OAuth"
 | `--iteration-timeout` | `0` | Per-iteration soft deadline (0 disables). |
 | `--stop-on-no-changes` | `0` | Halt after N iterations with no git changes. |
 | `--stop-on-error` | `0` | Halt after N iterations emitting errors. |
+| `--stall-after` | `0` | Halt after N consecutive identical responses (0 disables). |
+| `--iteration-delay` | `0` | Pause between iterations (e.g. `2s`). |
 | `--model` | `gpt-4` | Copilot model id. |
 | `--working-dir` | cwd | Directory where the assistant runs tools. |
 | `--log-level` | `info` | `debug` / `info` / `warn` / `error`. |
@@ -122,6 +149,7 @@ ralph run --dry-run "Implement OAuth"
 | Flag | Default | Purpose |
 | ---- | ------- | ------- |
 | `--promise` | `I'm special!` | Phrase the model wraps in `<promise>`. |
+| `--blocked-phrase` | (none) | Phrase the model wraps in `<blocked>` to signal it cannot proceed. |
 | `--streaming` | `true` | Stream deltas vs. wait for full messages. |
 | `--system-prompt` | (built-in) | Inline text or path to a Markdown file. |
 | `--system-prompt-mode` | `append` | `append` or `replace` Ralph's prompt. |
@@ -179,6 +207,16 @@ ralph resume --checkpoint-file state.json
 | `--oracle-every` | `0` | Consult every N iterations (0 disables). |
 | `--oracle-on-verify-fail` | `false` | Consult whenever verify fails. |
 
+### Lifecycle hooks
+
+| Flag | Default | Purpose |
+| ---- | ------- | ------- |
+| `--on-complete` | (none) | Shell command run when the loop completes successfully. |
+| `--on-blocked` | (none) | Shell command run when the model emits the blocked signal. |
+
+Hooks receive `RALPH_STATE` and `RALPH_ITERATIONS` environment variables.
+Hook errors are printed as warnings and do not change Ralph's exit code.
+
 ### Rate limiting
 
 | Flag | Default | Purpose |
@@ -189,11 +227,12 @@ ralph resume --checkpoint-file state.json
 
 | Command | Purpose |
 | ------- | ------- |
-| `ralph run <prompt>` | Run the iteration loop. |
+| `ralph run <prompt>` | Run the iteration loop. Prompt may be text, a file path, or `-` for stdin. |
 | `ralph resume` | Resume from a `--checkpoint-file`. |
 | `ralph reset` | Delete a checkpoint file (`--force` skips confirmation). |
 | `ralph doctor` | Check environment health (Copilot CLI, git, writable cwd). |
 | `ralph version` | Print build metadata. |
+| `ralph completion <shell>` | Print a shell completion script for `bash`, `zsh`, `fish`, or `powershell`. |
 
 ## How it works
 
@@ -241,6 +280,7 @@ There is no shared mutable state beyond Cobra flag bindings.
 | `2`  | Cancelled (`Ctrl+C` or invalid args). |
 | `3`  | `--timeout` exceeded. |
 | `4`  | `--max-iterations` reached without a promise. |
+| `5`  | Model signalled it cannot proceed (`--blocked-phrase` detected). |
 
 ## Development
 

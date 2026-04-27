@@ -346,6 +346,29 @@ func TestPromiseDetection(t *testing.T) {
 	}
 }
 
+// TestBlockedDetection tests the blocked-signal detection helper.
+func TestBlockedDetection(t *testing.T) {
+	tests := []struct {
+		name   string
+		text   string
+		phrase string
+		want   bool
+	}{
+		{"exact match", "<blocked>I give up</blocked>", "I give up", true},
+		{"embedded in text", "sorry <blocked>I give up</blocked> really", "I give up", true},
+		{"phrase absent", "keep going", "I give up", true == false},
+		{"wrong tags", "<promise>I give up</promise>", "I give up", false},
+		{"empty phrase", "<blocked></blocked>", "", false},
+		{"empty text", "", "I give up", false},
+		{"case sensitive", "<blocked>i give up</blocked>", "I give up", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, detectBlocked(tt.text, tt.phrase))
+		})
+	}
+}
+
 // TestLoopEngine_StateTransitions tests state machine transitions.
 func TestLoopEngine_StateTransitions(t *testing.T) {
 	t.Run("initial state is idle", func(t *testing.T) {

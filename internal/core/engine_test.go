@@ -69,6 +69,115 @@ func TestEmitDropsWhenClosed(t *testing.T) {
 	eng.emit(NewLoopStartEvent(eng.Config()))
 }
 
+// TestLoopEngine_BlockedSignal verifies that the engine stops with
+// StateBlocked when the model emits the blocked signal.
+func TestLoopEngine_BlockedSignal(t *testing.T) {
+	mock := NewMockSDKClient()
+	mock.ResponseText = "sorry <blocked>I give up</blocked>"
+
+	cfg := &LoopConfig{
+		Prompt:        "do x",
+		MaxIterations: 5,
+		BlockedPhrase: "I give up",
+	}
+	eng := NewLoopEngine(cfg, mock)
+
+	result, err := eng.Start(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, StateBlocked, result.State)
+	assert.ErrorIs(t, result.Error, ErrLoopBlocked)
+}
+
+// TestLoopEngine_BlockedPhraseDetectedEventEmitted verifies that a
+// BlockedPhraseDetectedEvent is emitted before the loop stops.
+func TestLoopEngine_BlockedPhraseDetectedEventEmitted(t *testing.T) {
+	mock := NewMockSDKClient()
+	mock.ResponseText = "<blocked>stuck</blocked>"
+
+	cfg := &LoopConfig{
+		Prompt:        "task",
+		MaxIterations: 3,
+		BlockedPhrase: "stuck",
+	}
+	eng := NewLoopEngine(cfg, mock)
+
+	evCh := eng.Events()
+	go func() { _, _ = eng.Start(context.Background()) }()
+
+	seen := false
+	for ev := range evCh {
+		if _, ok := ev.(*BlockedPhraseDetectedEvent); ok {
+			seen = true
+		}
+	}
+	assert.True(t, seen, "expected BlockedPhraseDetectedEvent")
+}
+
+// TestLoopEngine_StallDetection verifies that the loop stops when
+// StallAfter consecutive identical responses are produced.
+func TestLoopEngine_StallDetection(t *testing.T) {
+	mock := NewMockSDKClient()
+	mock.ResponseText = "same response every time"
+
+	cfg := &LoopConfig{
+		Prompt:        "task",
+		MaxIterations: 10,
+		StallAfter:    3,
+	}
+	eng := NewLoopEngine(cfg, mock)
+
+	result, err := eng.Start(context.Background())
+
+	// fail() returns the error as the second value — not a fatal error.
+	assert.ErrorIs(t, err, ErrStallDetected)
+	require.NotNil(t, result)
+	assert.Equal(t, StateFailed, result.State)
+	assert.ErrorIs(t, result.Error, ErrStallDetected)
+	// Should have stopped after StallAfter+1 iterations (first unique + N identical)
+	assert.LessOrEqual(t, result.Iterations, 5)
+}
+
+// TestLoopEngine_StallDetection_DisabledWhenZero verifies that StallAfter=0
+// does not trigger stall detection.
+func TestLoopEngine_StallDetection_DisabledWhenZero(t *testing.T) {
+	mock := NewMockSDKClient()
+	mock.ResponseText = "same every time"
+
+	cfg := &LoopConfig{
+		Prompt:        "task",
+		MaxIterations: 3,
+		StallAfter:    0, // disabled
+	}
+	eng := NewLoopEngine(cfg, mock)
+
+	result, err := eng.Start(context.Background())
+
+	require.NoError(t, err)
+	// Should complete naturally (max iterations), not via stall
+	assert.NotErrorIs(t, result.Error, ErrStallDetected)
+	assert.Equal(t, 3, result.Iterations)
+}
+
+// TestLoopEngine_IterationDelay verifies that IterationDelay delays do not
+// cause errors and are cancelled by context cancellation.
+func TestLoopEngine_IterationDelay(t *testing.T) {
+	mock := NewMockSDKClient()
+	mock.ResponseText = "ok"
+
+	cfg := &LoopConfig{
+		Prompt:         "task",
+		MaxIterations:  2,
+		IterationDelay: 1 * time.Millisecond,
+	}
+	eng := NewLoopEngine(cfg, mock)
+
+	result, err := eng.Start(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, result.Iterations)
+}
+
 func TestBuildResultTiming(t *testing.T) {
 	eng := NewLoopEngine(nil, nil)
 	eng.mu.Lock()

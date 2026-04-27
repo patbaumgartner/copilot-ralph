@@ -21,3 +21,18 @@ func detectPromise(text, promisePhrase string) bool {
 
 	return strings.Contains(text, promisePhrase)
 }
+
+// detectBlocked checks whether text contains the wrapped blocked marker.
+//
+// When the assistant cannot proceed it emits `<blocked>...</blocked>` with
+// the configured blocked phrase inside. This uses the same exact substring
+// match as detectPromise to avoid false positives.
+func detectBlocked(text, blockedPhrase string) bool {
+	if blockedPhrase == "" {
+		return false
+	}
+
+	wrapped := fmt.Sprintf("<blocked>%s</blocked>", blockedPhrase)
+
+	return strings.Contains(text, wrapped)
+}

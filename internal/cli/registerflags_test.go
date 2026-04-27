@@ -49,6 +49,9 @@ func TestRegisterRunFlagsBindsKeyFlags(t *testing.T) {
 		"dry-run", "streaming", "system-prompt", "system-prompt-mode",
 		"checkpoint-file", "oracle-model", "prompt-stack", "no-rate-limit-wait",
 		"json", "json-output", "log-file", "webhook",
+		// New flags
+		"blocked-phrase", "stall-after", "iteration-delay",
+		"on-complete", "on-blocked",
 	} {
 		assert.NotNilf(t, cmd.Flags().Lookup(name), "expected flag --%s", name)
 	}

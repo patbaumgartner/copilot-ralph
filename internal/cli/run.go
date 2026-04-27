@@ -9,9 +9,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -32,6 +35,7 @@ const (
 	exitCancelled     = 2
 	exitTimeout       = 3
 	exitMaxIterations = 4
+	exitBlocked       = 5
 )
 
 // ExitError carries an exit code that main can translate to the process exit
@@ -125,6 +129,15 @@ var (
 	// Prompt stack and rate-limit handling.
 	runPromptStack     []string
 	runNoRateLimitWait bool
+
+	// Blocked signal, stall detection, iteration delay.
+	runBlockedPhrase  string
+	runStallAfter     int
+	runIterationDelay time.Duration
+
+	// Lifecycle hooks.
+	runOnComplete string
+	runOnBlocked  string
 )
 
 func init() {
@@ -135,24 +148,24 @@ func init() {
 // It is shared by `ralph run` and `ralph resume` so both commands accept
 // the same overrides regardless of file init order.
 func registerRunFlags(cmd *cobra.Command) {
-	cmd.Flags().IntVarP(&runMaxIterations, "max-iterations", "m", 10, "maximum loop iterations")
-	cmd.Flags().DurationVarP(&runTimeout, "timeout", "t", 30*time.Minute, "maximum loop runtime")
-	cmd.Flags().DurationVar(&runIterTimeout, "iteration-timeout", 0, "per-iteration soft timeout (0 disables)")
-	cmd.Flags().StringVar(&runPromise, "promise", "I'm special!", "completion promise phrase")
-	cmd.Flags().StringVar(&runModel, "model", "gpt-4", "AI model to use")
-	cmd.Flags().StringVar(&runWorkingDir, "working-dir", ".", "working directory for loop execution")
+	cmd.Flags().IntVarP(&runMaxIterations, "max-iterations", "m", envInt("RALPH_MAX_ITERATIONS", 10), "maximum loop iterations")
+	cmd.Flags().DurationVarP(&runTimeout, "timeout", "t", envDuration("RALPH_TIMEOUT", 30*time.Minute), "maximum loop runtime")
+	cmd.Flags().DurationVar(&runIterTimeout, "iteration-timeout", envDuration("RALPH_ITERATION_TIMEOUT", 0), "per-iteration soft timeout (0 disables)")
+	cmd.Flags().StringVar(&runPromise, "promise", envString("RALPH_PROMISE", "I'm special!"), "completion promise phrase")
+	cmd.Flags().StringVar(&runModel, "model", envString("RALPH_MODEL", "gpt-4"), "AI model to use")
+	cmd.Flags().StringVar(&runWorkingDir, "working-dir", envString("RALPH_WORKING_DIR", "."), "working directory for loop execution")
 	cmd.Flags().BoolVar(&runDryRun, "dry-run", false, "show what would be executed without running")
-	cmd.Flags().BoolVar(&runStreaming, "streaming", true, "enable streaming responses")
-	cmd.Flags().StringVar(&runSystemPrompt, "system-prompt", "", "custom system message, can be a prompt or path to Markdown file")
+	cmd.Flags().BoolVar(&runStreaming, "streaming", envBool("RALPH_STREAMING", true), "enable streaming responses")
+	cmd.Flags().StringVar(&runSystemPrompt, "system-prompt", envString("RALPH_SYSTEM_PROMPT", ""), "custom system message, can be a prompt or path to Markdown file")
 	cmd.Flags().StringVar(&runSystemPromptMode, "system-prompt-mode", "append", "system message mode: append or replace")
 	cmd.Flags().StringVar(&runLogLevel, "log-level", "info", "log level: debug, info, warn, error")
-	cmd.Flags().StringVar(&runCarryContext, "carry-context", "summary", "carry-context mode: off, summary, verbatim")
+	cmd.Flags().StringVar(&runCarryContext, "carry-context", envString("RALPH_CARRY_CONTEXT", "summary"), "carry-context mode: off, summary, verbatim")
 	cmd.Flags().IntVar(&runCarryMaxRunes, "carry-context-max-runes", 4000, "maximum runes carried into the next iteration prompt (<=0 disables truncation)")
 	cmd.Flags().StringVar(&runPlanFile, "plan-file", "", "path to running fix_plan.md (relative paths resolved against --working-dir; empty disables)")
 	cmd.Flags().StringVar(&runSpecsDir, "specs", "", "directory whose Markdown specs are listed in each iteration prompt")
 	cmd.Flags().IntVar(&runStopOnNoChanges, "stop-on-no-changes", 0, "halt after N consecutive iterations with no git working-tree changes (0 disables)")
 	cmd.Flags().IntVar(&runStopOnError, "stop-on-error", 0, "halt after N consecutive iterations that emit at least one error event (0 disables)")
-	cmd.Flags().StringVar(&runVerifyCmd, "verify-cmd", "", "shell command run after each iteration; failures fold into the next prompt")
+	cmd.Flags().StringVar(&runVerifyCmd, "verify-cmd", envString("RALPH_VERIFY_CMD", ""), "shell command run after each iteration; failures fold into the next prompt")
 	cmd.Flags().DurationVar(&runVerifyTimeout, "verify-timeout", 5*time.Minute, "timeout for a single --verify-cmd run")
 	cmd.Flags().IntVar(&runVerifyMaxBytes, "verify-max-bytes", 16*1024, "max bytes captured per stream from --verify-cmd (<=0 unlimited)")
 	cmd.Flags().BoolVar(&runAutoCommit, "auto-commit", false, "git add -A && git commit after each iteration that produced changes (never pushes)")
@@ -169,16 +182,25 @@ func registerRunFlags(cmd *cobra.Command) {
 	cmd.Flags().DurationVar(&runWebhookTimeout, "webhook-timeout", 5*time.Second, "timeout for a single --webhook delivery")
 
 	// Checkpoint.
-	cmd.Flags().StringVar(&runCheckpoint, "checkpoint-file", "", "write loop state to this file after every iteration (resume with `ralph resume`)")
+	cmd.Flags().StringVar(&runCheckpoint, "checkpoint-file", envString("RALPH_CHECKPOINT_FILE", ""), "write loop state to this file after every iteration (resume with `ralph resume`)")
 
 	// Oracle.
-	cmd.Flags().StringVar(&runOracleModel, "oracle-model", "", "second-opinion model consulted between iterations (empty disables)")
+	cmd.Flags().StringVar(&runOracleModel, "oracle-model", envString("RALPH_ORACLE_MODEL", ""), "second-opinion model consulted between iterations (empty disables)")
 	cmd.Flags().IntVar(&runOracleEvery, "oracle-every", 0, "consult the oracle every N iterations (<=0 disables)")
 	cmd.Flags().BoolVar(&runOracleOnVerifyErr, "oracle-on-verify-fail", false, "consult the oracle whenever --verify-cmd fails")
 
 	// Prompt-stack and rate-limit handling.
 	cmd.Flags().StringSliceVar(&runPromptStack, "prompt-stack", nil, "additional prompts (paths or literals) prepended to the main prompt in order")
-	cmd.Flags().BoolVar(&runNoRateLimitWait, "no-rate-limit-wait", false, "fail immediately on Copilot rate-limit / quota errors instead of waiting")
+	cmd.Flags().BoolVar(&runNoRateLimitWait, "no-rate-limit-wait", envBool("RALPH_NO_RATE_LIMIT_WAIT", false), "fail immediately on Copilot rate-limit / quota errors instead of waiting")
+
+	// Blocked signal, stall detection, iteration delay.
+	cmd.Flags().StringVar(&runBlockedPhrase, "blocked-phrase", envString("RALPH_BLOCKED_PHRASE", ""), "halt with exit 5 when assistant wraps this phrase in <blocked>...</blocked>")
+	cmd.Flags().IntVar(&runStallAfter, "stall-after", envInt("RALPH_STALL_AFTER", 0), "halt after N consecutive iterations with identical responses (0 disables)")
+	cmd.Flags().DurationVar(&runIterationDelay, "iteration-delay", envDuration("RALPH_ITERATION_DELAY", 0), "pause between iterations (0 disables)")
+
+	// Lifecycle hooks.
+	cmd.Flags().StringVar(&runOnComplete, "on-complete", envString("RALPH_ON_COMPLETE", ""), "shell command run after the loop completes successfully")
+	cmd.Flags().StringVar(&runOnBlocked, "on-blocked", envString("RALPH_ON_BLOCKED", ""), "shell command run when the model emits the blocked signal")
 }
 
 // runLoop executes the AI development loop.
@@ -342,6 +364,16 @@ func runLoopWithConfig(cmd *cobra.Command, loopConfig *core.LoopConfig) error {
 		printSummary(result, startTime)
 	}
 
+	// Run lifecycle hooks before returning the exit error.
+	if result != nil {
+		switch result.State {
+		case core.StateComplete:
+			runHook(loopConfig.OnCompleteCmd, loopConfig.WorkingDir, result)
+		case core.StateBlocked:
+			runHook(loopConfig.OnBlockedCmd, loopConfig.WorkingDir, result)
+		}
+	}
+
 	return exitErrorFor(result)
 }
 
@@ -355,6 +387,8 @@ func exitErrorFor(result *core.LoopResult) error {
 	switch result.State {
 	case core.StateComplete:
 		return nil
+	case core.StateBlocked:
+		return &ExitError{Code: exitBlocked, Err: result.Error}
 	case core.StateCancelled:
 		return &ExitError{Code: exitCancelled, Err: result.Error}
 	case core.StateFailed:
@@ -373,11 +407,20 @@ func exitErrorFor(result *core.LoopResult) error {
 }
 
 // resolvePrompt determines the prompt from the positional argument.
+// If the argument is "-", the prompt is read from stdin.
 // If the argument is a path to a Markdown file (.md/.markdown), its contents
 // are returned. Otherwise the argument is returned verbatim.
 func resolvePrompt(prompt string) (string, error) {
 	if prompt == "" {
 		return "", errors.New("no prompt provided")
+	}
+
+	if prompt == "-" {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return "", fmt.Errorf("reading prompt from stdin: %w", err)
+		}
+		return strings.TrimSpace(string(data)), nil
 	}
 
 	info, err := os.Stat(prompt)
@@ -445,6 +488,11 @@ func buildLoopConfig(prompt string) (*core.LoopConfig, error) {
 		OracleOnVerifyFail:     runOracleOnVerifyErr,
 		PromptStack:            stack,
 		NoRateLimitWait:        runNoRateLimitWait,
+		BlockedPhrase:          runBlockedPhrase,
+		StallAfter:             runStallAfter,
+		IterationDelay:         runIterationDelay,
+		OnCompleteCmd:          runOnComplete,
+		OnBlockedCmd:           runOnBlocked,
 	}, nil
 }
 
@@ -511,6 +559,14 @@ func validateSettings(cfg *core.LoopConfig) error {
 
 	if cfg.StopOnError < 0 {
 		return fmt.Errorf("stop-on-error must be >= 0 (got: %d)", cfg.StopOnError)
+	}
+
+	if cfg.StallAfter < 0 {
+		return fmt.Errorf("stall-after must be >= 0 (got: %d)", cfg.StallAfter)
+	}
+
+	if cfg.IterationDelay < 0 {
+		return fmt.Errorf("iteration-delay must be >= 0 (got: %v)", cfg.IterationDelay)
 	}
 
 	return nil
@@ -704,6 +760,18 @@ func displayEvents(events <-chan any, cfg *core.LoopConfig) {
 			}
 			fmt.Println(styles.ErrorStyle.Render(fmt.Sprintf("⛔ Stopping: %d consecutive iterations with errors", e.Threshold)))
 
+		case *core.BlockedPhraseDetectedEvent:
+			if newline {
+				fmt.Println()
+			}
+			fmt.Println(styles.WarningStyle.Render(fmt.Sprintf("⛔ Blocked: model signalled it cannot proceed (phrase: %q)", e.Phrase)))
+
+		case *core.StallStopEvent:
+			if newline {
+				fmt.Println()
+			}
+			fmt.Println(styles.WarningStyle.Render(fmt.Sprintf("⛔ Stopping: %d consecutive identical responses (stall detected)", e.Threshold)))
+
 		case *core.VerifyResultEvent:
 			if newline {
 				fmt.Println()
@@ -790,6 +858,8 @@ func printSummary(result *core.LoopResult, startTime time.Time) {
 	switch result.State {
 	case core.StateComplete:
 		status = styles.SuccessStyle.Render("✓ Complete")
+	case core.StateBlocked:
+		status = styles.WarningStyle.Render("⛔ Blocked")
 	case core.StateFailed:
 		status = styles.ErrorStyle.Render("✗ Failed")
 	case core.StateCancelled:
@@ -849,4 +919,69 @@ func formatRateLimitWait(e *core.RateLimitWaitEvent) string {
 		return fmt.Sprintf("⏳ Copilot rate limit reached; waiting %s before retry (%s)", wait, e.Message)
 	}
 	return fmt.Sprintf("⏳ Copilot rate limit reached; waiting %s before retry", wait)
+}
+
+// runHook executes a shell command hook (--on-complete / --on-blocked) with a
+// short timeout. Errors are printed as warnings; a failing hook never changes
+// Ralph's own exit code.
+func runHook(shellCmd, workingDir string, result *core.LoopResult) {
+	if shellCmd == "" {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "sh", "-c", shellCmd) //nolint:gosec // shellCmd is user-supplied, intentional
+	cmd.Dir = workingDir
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("RALPH_STATE=%s", result.State),
+		fmt.Sprintf("RALPH_ITERATIONS=%d", result.Iterations),
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, styles.WarningStyle.Render(
+			fmt.Sprintf("⚠ hook %q failed: %v\n%s", shellCmd, err, strings.TrimRight(string(out), "\n"))))
+	}
+}
+
+// envString returns the value of an environment variable, or def if it is unset or empty.
+func envString(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+// envInt returns the integer value of an environment variable, or def if it
+// is unset, empty, or not parseable as an integer.
+func envInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
+}
+
+// envDuration returns the duration value of an environment variable, or def
+// if it is unset, empty, or not parseable.
+func envDuration(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return def
+}
+
+// envBool returns the boolean value of an environment variable, or def if it
+// is unset, empty, or not parseable.
+func envBool(key string, def bool) bool {
+	if v := os.Getenv(key); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
+		}
+	}
+	return def
 }

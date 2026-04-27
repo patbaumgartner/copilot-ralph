@@ -372,3 +372,32 @@ type CheckpointSavedEvent struct {
 func NewCheckpointSavedEvent(path string, iteration int) *CheckpointSavedEvent {
 	return &CheckpointSavedEvent{Path: path, Iteration: iteration}
 }
+
+// BlockedPhraseDetectedEvent indicates the assistant emitted the blocked
+// signal, signalling it cannot make further progress without intervention.
+type BlockedPhraseDetectedEvent struct {
+	// Phrase is the blocked phrase that was detected.
+	Phrase string
+	// Iteration is the iteration where the phrase was detected.
+	Iteration int
+}
+
+// NewBlockedPhraseDetectedEvent creates a new BlockedPhraseDetectedEvent.
+func NewBlockedPhraseDetectedEvent(phrase string, iteration int) *BlockedPhraseDetectedEvent {
+	return &BlockedPhraseDetectedEvent{Phrase: phrase, Iteration: iteration}
+}
+
+// StallStopEvent indicates the loop stopped because consecutive iterations
+// produced identical assistant responses.
+type StallStopEvent struct {
+	// Threshold is the configured number of identical iterations that
+	// triggers the stop.
+	Threshold int
+	// Iteration is the iteration where the threshold was reached.
+	Iteration int
+}
+
+// NewStallStopEvent creates a new StallStopEvent.
+func NewStallStopEvent(threshold, iteration int) *StallStopEvent {
+	return &StallStopEvent{Threshold: threshold, Iteration: iteration}
+}

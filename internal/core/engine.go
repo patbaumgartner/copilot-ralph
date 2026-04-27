@@ -41,6 +41,14 @@ var ErrErrorStop = errors.New("loop stopped: consecutive error threshold exceede
 // is set and a rate-limit / quota error was reported.
 var ErrRateLimitFatal = errors.New("loop stopped: rate limit reached and --no-rate-limit-wait is set")
 
+// ErrLoopBlocked indicates the model emitted the blocked signal, meaning it
+// cannot make further progress without external intervention.
+var ErrLoopBlocked = errors.New("loop blocked: model signalled it cannot proceed")
+
+// ErrStallDetected indicates the loop stopped because consecutive iterations
+// produced identical responses.
+var ErrStallDetected = errors.New("loop stopped: stall detected (identical responses)")
+
 // Start begins loop execution and runs until completion, failure, or cancellation.
 // It returns the loop result containing statistics and outcome.
 // The provided context can be used to cancel execution externally.
@@ -137,6 +145,9 @@ func (e *LoopEngine) runLoop() (*LoopResult, error) {
 		}
 
 		if stop != nil {
+			if errors.Is(stop, ErrLoopBlocked) {
+				return e.blocked()
+			}
 			return e.fail(stop)
 		}
 
@@ -209,6 +220,7 @@ func (e *LoopEngine) executeIteration() (stop, fatal error) {
 
 	var responseBuf strings.Builder
 	iterErrors := 0
+	blocked := false
 
 	if e.sdk != nil {
 		events, err := e.sdk.SendPrompt(iterCtx, prompt)
@@ -243,6 +255,13 @@ func (e *LoopEngine) executeIteration() (stop, fatal error) {
 
 					if !ev.Reasoning && detectPromise(ev.Text, e.config.PromisePhrase) {
 						e.emit(NewPromiseDetectedEvent(e.config.PromisePhrase, "ai_response", iteration))
+					}
+
+					if !ev.Reasoning && detectBlocked(responseBuf.String(), e.config.BlockedPhrase) {
+						e.emit(NewBlockedPhraseDetectedEvent(e.config.BlockedPhrase, iteration))
+						// Drain remaining events then signal the caller.
+						blocked = true
+						break eventLoop
 					}
 
 				case *sdk.ToolCallEvent:
@@ -285,6 +304,27 @@ func (e *LoopEngine) executeIteration() (stop, fatal error) {
 
 	// Update carry-context based on this iteration's response.
 	e.updateCarryContext(responseBuf.String())
+
+	// Blocked signal check: the event loop set this flag when
+	// <blocked>...</blocked> was detected in the response.
+	if blocked {
+		return ErrLoopBlocked, nil
+	}
+
+	// Stall detection: stop if consecutive identical responses exceed the threshold.
+	if e.config.StallAfter > 0 {
+		responseText := strings.TrimSpace(responseBuf.String())
+		if responseText != "" && responseText == strings.TrimSpace(e.lastResponse) {
+			e.consecutiveStalls++
+		} else {
+			e.consecutiveStalls = 0
+		}
+		e.lastResponse = responseText
+		if e.consecutiveStalls >= e.config.StallAfter {
+			e.emit(NewStallStopEvent(e.config.StallAfter, iteration))
+			return ErrStallDetected, nil
+		}
+	}
 
 	// Detect plan changes and emit a single event when the plan moved.
 	if planPath != "" {
@@ -348,6 +388,16 @@ func (e *LoopEngine) executeIteration() (stop, fatal error) {
 
 	// Write a checkpoint last so it captures every state change above.
 	e.writeCheckpoint(iteration)
+
+	// Iteration delay: pause before the next iteration, honouring context
+	// cancellation so the delay does not outlive the loop timeout.
+	if e.config.IterationDelay > 0 {
+		select {
+		case <-e.ctx.Done():
+			return nil, e.ctx.Err()
+		case <-time.After(e.config.IterationDelay):
+		}
+	}
 
 	return nil, nil
 }
