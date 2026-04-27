@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-04-27
+
+### Fixed
+
+- Light-background terminal colors now correctly detected in VS Code integrated
+  terminals. `VSCODE_THEME_KIND` is now checked first (always set by VS Code)
+  before the `COLORFGBG` fallback, so the muted deep-color palette is applied
+  reliably when a light or high-contrast-light theme is active.
+- Light-background palette colors darkened to meet WCAG AA contrast (≥ 4.5:1
+  against white): Primary → Deep Violet, Success → Forest Green,
+  Warning → Burnt Amber, Info → Navy Blue.
+
+### Changed
+
+- Test coverage improved: added tests for `ExitError`, `exitErrorFor`,
+  `ralph doctor` checks, `ralph reset` command, and all style/theme-detection
+  paths. `internal/tui/styles` reaches 100% statement coverage.
+
 ## [0.2.1] - 2026-04-27
 
 ### Fixed
