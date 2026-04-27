@@ -42,7 +42,7 @@ func runReset(cmd *cobra.Command, args []string) error {
 		if resetForce {
 			return nil
 		}
-		return err
+		return fmt.Errorf("delete checkpoint: %w", err)
 	}
 	fmt.Printf("removed %s\n", resetCheckpoint)
 	return nil

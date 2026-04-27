@@ -8,21 +8,32 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/patbaumgartner/copilot-ralph/internal/cli"
 )
 
+var (
+	executeCLI           = cli.Execute
+	stderr     io.Writer = os.Stderr
+)
+
 func main() {
-	if err := cli.Execute(); err != nil {
+	os.Exit(run())
+}
+
+func run() int {
+	if err := executeCLI(); err != nil {
 		var exitErr *cli.ExitError
 		if errors.As(err, &exitErr) {
 			if exitErr.Err != nil {
-				fmt.Fprintln(os.Stderr, "Error:", exitErr.Err)
+				_, _ = fmt.Fprintln(stderr, "Error:", exitErr.Err)
 			}
-			os.Exit(exitErr.Code)
+			return exitErr.Code
 		}
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(1)
+		_, _ = fmt.Fprintln(stderr, "Error:", err)
+		return 1
 	}
+	return 0
 }

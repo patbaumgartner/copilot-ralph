@@ -37,6 +37,7 @@
 
 [![CI](https://github.com/patbaumgartner/copilot-ralph/actions/workflows/ci.yml/badge.svg)](https://github.com/patbaumgartner/copilot-ralph/actions/workflows/ci.yml)
 [![Release](https://github.com/patbaumgartner/copilot-ralph/actions/workflows/release.yml/badge.svg)](https://github.com/patbaumgartner/copilot-ralph/actions/workflows/release.yml)
+[![codecov](https://codecov.io/gh/patbaumgartner/copilot-ralph/branch/main/graph/badge.svg)](https://codecov.io/gh/patbaumgartner/copilot-ralph)
 [![Go Reference](https://pkg.go.dev/badge/github.com/patbaumgartner/copilot-ralph.svg)](https://pkg.go.dev/github.com/patbaumgartner/copilot-ralph)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 

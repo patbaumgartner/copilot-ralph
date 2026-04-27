@@ -490,6 +490,113 @@ loop:
 	assert.True(t, closed, "closeDone should be called on session.idle")
 }
 
+func TestHandleSDKEventReasoningAndEmptyContent(t *testing.T) {
+	c := &CopilotClient{}
+	events := make(chan Event, 10)
+	defer close(events)
+	closeDone := func() {}
+	pending := make(map[string]ToolCall)
+
+	c.handleSDKEvent(copilot.SessionEvent{Data: &copilot.AssistantMessageDeltaData{}}, events, closeDone, pending)
+	c.handleSDKEvent(copilot.SessionEvent{Data: &copilot.AssistantReasoningDeltaData{DeltaContent: "thinking"}}, events, closeDone, pending)
+	c.handleSDKEvent(copilot.SessionEvent{Data: &copilot.AssistantMessageData{}}, events, closeDone, pending)
+	c.handleSDKEvent(copilot.SessionEvent{Data: &copilot.AssistantReasoningData{Content: "done thinking"}}, events, closeDone, pending)
+
+	first := <-events
+	second := <-events
+	assert.Equal(t, EventTypeText, first.Type())
+	assert.True(t, first.(*TextEvent).Reasoning)
+	assert.Equal(t, "thinking", first.(*TextEvent).Text)
+	assert.True(t, second.(*TextEvent).Reasoning)
+	assert.Equal(t, "done thinking", second.(*TextEvent).Text)
+	assert.Empty(t, events)
+}
+
+func TestHandleSDKEventRateLimitSuppressesGenericError(t *testing.T) {
+	c := &CopilotClient{}
+	events := make(chan Event, 10)
+	defer close(events)
+
+	c.handleSDKEvent(
+		copilot.SessionEvent{Data: &copilot.SessionErrorData{Message: "rate limit reached", ErrorType: "rate_limit"}},
+		events,
+		func() {},
+		map[string]ToolCall{},
+	)
+
+	assert.Empty(t, events)
+	info, ok := c.consumeRateLimit(errors.New("ignored"))
+	require.True(t, ok)
+	assert.Equal(t, "rate limit reached", info.message)
+	assert.Equal(t, "rate_limit", info.errorType)
+}
+
+func TestRecordRateLimitUsesQuotaSnapshotFallback(t *testing.T) {
+	reset := time.Now().Add(time.Hour)
+	c := &CopilotClient{
+		hasQuotaReset: true,
+		quotaResetAt:  reset,
+	}
+
+	ok := c.recordRateLimit(&copilot.SessionErrorData{Message: "quota exceeded", ErrorType: "quota"})
+	require.True(t, ok)
+
+	info, ok := c.consumeRateLimit(errors.New("ignored"))
+	require.True(t, ok)
+	assert.Equal(t, reset, info.resetAt)
+	assert.True(t, info.hasReset)
+}
+
+func TestRecordRateLimitIgnoresNonRateLimitAndNil(t *testing.T) {
+	c := &CopilotClient{}
+	assert.False(t, c.recordRateLimit(nil))
+	assert.False(t, c.recordRateLimit(&copilot.SessionErrorData{Message: "bad request", ErrorType: "validation"}))
+}
+
+func TestRecordQuotaSnapshotsStoresSoonestFutureReset(t *testing.T) {
+	now := time.Now()
+	past := now.Add(-time.Minute)
+	soon := now.Add(10 * time.Minute)
+	later := now.Add(time.Hour)
+	c := &CopilotClient{}
+
+	c.recordQuotaSnapshots(nil)
+	c.recordQuotaSnapshots(&copilot.AssistantUsageData{})
+	c.recordQuotaSnapshots(&copilot.AssistantUsageData{
+		QuotaSnapshots: map[string]copilot.AssistantUsageQuotaSnapshot{
+			"past":  {ResetDate: &past},
+			"soon":  {ResetDate: &soon},
+			"later": {ResetDate: &later},
+			"none":  {},
+		},
+	})
+
+	c.quotaMu.Lock()
+	defer c.quotaMu.Unlock()
+	assert.True(t, c.hasQuotaReset)
+	assert.Equal(t, soon, c.quotaResetAt)
+}
+
+func TestClearLastRateLimit(t *testing.T) {
+	c := &CopilotClient{lastRateLimit: &rateLimitInfo{message: "quota"}}
+	c.clearLastRateLimit()
+	assert.Nil(t, c.lastRateLimit)
+}
+
+func TestSendPromptWithoutActiveSession(t *testing.T) {
+	c := &CopilotClient{}
+	events, err := c.SendPrompt(context.Background(), "hello")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no active session")
+	assert.Nil(t, events)
+}
+
+func TestWithLogLevelOption(t *testing.T) {
+	c, err := NewCopilotClient(WithLogLevel("debug"))
+	require.NoError(t, err)
+	assert.Equal(t, "debug", c.logLevel)
+}
+
 func TestSendPromptWithRetryCancelsImmediately(t *testing.T) {
 	c, err := NewCopilotClient()
 	require.NoError(t, err)

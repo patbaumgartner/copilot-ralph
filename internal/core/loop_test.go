@@ -250,6 +250,12 @@ func TestNewLoopEngine(t *testing.T) {
 	})
 }
 
+func TestBuildSystemPrompt(t *testing.T) {
+	prompt := BuildSystemPrompt("Ship it")
+	assert.Contains(t, prompt, "Ship it")
+	assert.NotContains(t, prompt, "{{.Promise}}")
+}
+
 // TestPromiseDetection tests the promise detection function.
 func TestPromiseDetection(t *testing.T) {
 	tests := []struct {

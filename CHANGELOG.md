@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Removed the remaining `else` block in `pkg/version/version.go` (the
+  `vcs.revision` case) that violated the project's no-`else` convention.
+- Wrapped bare `return err` at cross-package boundaries: `CreateTag` in
+  `internal/gitutil/gitutil.go` and the `resolvePrompt` / `buildLoopConfig`
+  call sites in `internal/cli/run.go`.
+- Scoped `release.yml` GitHub Actions permissions: workflow-level default is
+  now `permissions: {}` and `contents: write` is granted at job level only.
+- Pinned `golang.org/x/tools/cmd/goimports` to `v0.27.0` in `make dev-deps`
+  for deterministic developer tooling installs.
+
+### Added
+
+- Extracted `displayEvent` helper from the `displayEvents` loop in
+  `internal/cli/run.go`, making per-event rendering logic unit-testable
+  independently of the event channel. Added table-driven tests covering all
+  event categories in `run_test.go`.
+- Added `.github/CODEOWNERS` assigning `@patbaumgartner` as the default
+  reviewer for all paths.
+
+## [0.2.3] - 2026-04-27
+
+### Fixed
+
+- Stall-detection counter now accumulates correctly across iterations; the
+  previous refactoring erroneously reset it to 0 each iteration so
+  `--stall-after` could never fire beyond the first duplicate response.
+- Removed two `else` blocks in `internal/core/engine.go` and
+  `internal/tui/styles/styles.go` that violated the project's no-`else`
+  convention.
+- Wrapped bare `return err` calls at cross-package boundaries in
+  `internal/cli/reset.go`, `internal/cli/resume.go`, and
+  `internal/gitutil/gitutil.go` with `fmt.Errorf("…: %w", err)`.
+
+### Added
+
+- Dependency-review GitHub Actions workflow (`.github/workflows/dependency-review.yml`)
+  fails PRs that introduce vulnerabilities of moderate severity or above.
+- Codecov coverage upload in CI and coverage badge in README.
+
+### Changed
+
+- `govulncheck` pinned to `v1.3.0` in CI workflow and `make dev-deps` to
+  ensure reproducible vulnerability scans.
+- `golangci-lint` pinned to `v2.11.4` in `make dev-deps`; CONTRIBUTING.md
+  updated with a note about the Go toolchain version requirement.
+- Test coverage for `internal/gitutil` improved to ~78% by adding tests for
+  `DiffStat`, `CommitAll`, and `CreateTag`.
+
+## [0.2.2] - 2026-04-27
+
+### Fixed
+
+- Light-background terminal colors now correctly detected in VS Code integrated
+  terminals. `VSCODE_THEME_KIND` is now checked first (always set by VS Code)
+  before the `COLORFGBG` fallback, so the muted deep-color palette is applied
+  reliably when a light or high-contrast-light theme is active.
+- Light-background palette colors darkened to meet WCAG AA contrast (≥ 4.5:1
+  against white): Primary → Deep Violet, Success → Forest Green,
+  Warning → Burnt Amber, Info → Navy Blue.
+
+### Changed
+
+- Test coverage improved: added tests for `ExitError`, `exitErrorFor`,
+  `ralph doctor` checks, `ralph reset` command, and all style/theme-detection
+  paths. `internal/tui/styles` reaches 100% statement coverage.
+
 ## [0.2.1] - 2026-04-27
 
 ### Fixed
@@ -192,6 +260,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ralph version`: print build metadata (version, commit, build date,
   Go version).
 
-[Unreleased]: https://github.com/patbaumgartner/copilot-ralph/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/patbaumgartner/copilot-ralph/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/patbaumgartner/copilot-ralph/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/patbaumgartner/copilot-ralph/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/patbaumgartner/copilot-ralph/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/patbaumgartner/copilot-ralph/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/patbaumgartner/copilot-ralph/releases/tag/v0.1.0

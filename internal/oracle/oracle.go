@@ -14,7 +14,15 @@ import (
 // SDKOracle wraps a CopilotClient to satisfy core.OracleClient. The
 // wrapped client owns its own session lifecycle managed by Consult.
 type SDKOracle struct {
-	client *sdk.CopilotClient
+	client oracleClient
+}
+
+type oracleClient interface {
+	Start() error
+	Stop() error
+	CreateSession(context.Context) error
+	DestroySession(context.Context) error
+	SendPrompt(context.Context, string) (<-chan sdk.Event, error)
 }
 
 // New builds a fresh oracle client targeting model. The caller passes

@@ -79,3 +79,44 @@ func TestEnsureDirAndTake(t *testing.T) {
 		t.Fatalf("expected Changed to be false for identical snapshots")
 	}
 }
+
+func TestReadDirectoryReturnsError(t *testing.T) {
+	_, err := Read(t.TempDir())
+	if err == nil {
+		t.Fatalf("expected read error for directory")
+	}
+}
+
+func TestEnsureDirReportsMkdirError(t *testing.T) {
+	dir := t.TempDir()
+	parentFile := filepath.Join(dir, "not-a-dir")
+	if err := os.WriteFile(parentFile, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write parent: %v", err)
+	}
+
+	err := EnsureDir(filepath.Join(parentFile, "fix_plan.md"))
+	if err == nil {
+		t.Fatalf("expected mkdir error")
+	}
+}
+
+func TestEnsureDirNoopForBareFilename(t *testing.T) {
+	if err := EnsureDir("fix_plan.md"); err != nil {
+		t.Fatalf("EnsureDir bare filename: %v", err)
+	}
+}
+
+func TestTakePropagatesReadError(t *testing.T) {
+	_, err := Take(t.TempDir())
+	if err == nil {
+		t.Fatalf("expected read error")
+	}
+}
+
+func TestChangedDetectsContentOnlyChange(t *testing.T) {
+	prev := Snapshot{Path: "plan.md", Content: "one", Exists: true}
+	next := Snapshot{Path: "plan.md", Content: "two", Exists: true}
+	if !Changed(prev, next) {
+		t.Fatalf("expected content change")
+	}
+}

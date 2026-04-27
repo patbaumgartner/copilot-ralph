@@ -3,6 +3,7 @@ package eventsink
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,22 @@ type sampleEvent struct {
 	Iteration int
 	Note      string
 }
+
+type errWriter struct{}
+
+func (errWriter) Write([]byte) (int, error) { return 0, errors.New("write failed") }
+
+type errCloser struct{}
+
+func (errCloser) Close() error { return errors.New("close failed") }
+
+type errSink struct {
+	writeErr error
+	closeErr error
+}
+
+func (s errSink) Write(any) error { return s.writeErr }
+func (s errSink) Close() error    { return s.closeErr }
 
 func TestJSONSinkWritesOneLinePerEvent(t *testing.T) {
 	var buf bytes.Buffer
@@ -138,5 +155,105 @@ func TestFanOutAggregatesErrors(t *testing.T) {
 	}
 	if err := fan.Close(); err != nil {
 		t.Fatalf("close: %v", err)
+	}
+}
+
+func TestJSONSinkNoopsAndErrorPaths(t *testing.T) {
+	if err := (*JSONSink)(nil).Write(&sampleEvent{}); err != nil {
+		t.Fatalf("nil sink write: %v", err)
+	}
+	if err := NewJSONSink(nil).Write(&sampleEvent{}); err != nil {
+		t.Fatalf("nil writer write: %v", err)
+	}
+	if err := (*JSONSink)(nil).Close(); err != nil {
+		t.Fatalf("nil sink close: %v", err)
+	}
+
+	if err := NewJSONSink(io.Discard).Write(make(chan int)); err == nil {
+		t.Fatalf("expected marshal error")
+	}
+	if err := NewJSONSink(errWriter{}).Write(&sampleEvent{}); err == nil {
+		t.Fatalf("expected write error")
+	}
+
+	s := &JSONSink{w: io.Discard, closer: errCloser{}}
+	if err := s.Close(); err == nil {
+		t.Fatalf("expected close error")
+	}
+}
+
+func TestNewFileSinkErrors(t *testing.T) {
+	dir := t.TempDir()
+	parentFile := filepath.Join(dir, "not-a-dir")
+	if err := os.WriteFile(parentFile, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write parent: %v", err)
+	}
+
+	if _, err := NewJSONFileSink(filepath.Join(parentFile, "events.jsonl")); err == nil {
+		t.Fatalf("expected json file sink error")
+	}
+	if _, err := NewLogFileSink(filepath.Join(parentFile, "events.log")); err == nil {
+		t.Fatalf("expected log file sink error")
+	}
+}
+
+func TestLogFileSinkNoopsAndErrorPaths(t *testing.T) {
+	if err := (*LogFileSink)(nil).Write(&sampleEvent{}); err != nil {
+		t.Fatalf("nil sink write: %v", err)
+	}
+	if err := (&LogFileSink{}).Write(&sampleEvent{}); err != nil {
+		t.Fatalf("nil file write: %v", err)
+	}
+	if err := (*LogFileSink)(nil).Close(); err != nil {
+		t.Fatalf("nil sink close: %v", err)
+	}
+	if err := (&LogFileSink{}).Close(); err != nil {
+		t.Fatalf("nil file close: %v", err)
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "closed.log")
+	s, err := NewLogFileSink(path)
+	if err != nil {
+		t.Fatalf("new log sink: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if err := s.Write(&sampleEvent{}); err == nil {
+		t.Fatalf("expected write error after close")
+	}
+}
+
+func TestWebhookSinkNoopsAndRequestErrors(t *testing.T) {
+	if err := (*WebhookSink)(nil).Write(&sampleEvent{}); err != nil {
+		t.Fatalf("nil sink write: %v", err)
+	}
+	if err := NewWebhookSink("", 0).Write(&sampleEvent{}); err != nil {
+		t.Fatalf("empty url write: %v", err)
+	}
+
+	if err := NewWebhookSink("http://example.invalid", time.Second).Write(make(chan int)); err == nil {
+		t.Fatalf("expected marshal error")
+	}
+	if err := NewWebhookSink(":// bad-url", time.Second).Write(&sampleEvent{}); err == nil {
+		t.Fatalf("expected request build error")
+	}
+}
+
+func TestFanOutNilSinkAndCloseError(t *testing.T) {
+	fan := &FanOut{}
+	fan.Add(nil)
+	fan.Add(errSink{writeErr: errors.New("write failed"), closeErr: errors.New("close failed")})
+
+	fan.Write(&sampleEvent{})
+	if errs := fan.Errors(); len(errs) != 1 {
+		t.Fatalf("expected one write error, got %d", len(errs))
+	}
+	if err := fan.Close(); err == nil {
+		t.Fatalf("expected close error")
+	}
+	if err := fan.Close(); err != nil {
+		t.Fatalf("second close should be nil, got %v", err)
 	}
 }

@@ -330,3 +330,74 @@ func TestExitErrorFor(t *testing.T) {
 		})
 	}
 }
+
+// TestDisplayEvent verifies the return values of displayEvent for every
+// event category, independent of rendered output.
+func TestDisplayEvent(t *testing.T) {
+	cfg := &core.LoopConfig{MaxIterations: 5}
+
+	// Suppress stdout so rendered ANSI output doesn't pollute test output.
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stdout = w
+	// Drain the pipe in the background so writes never block.
+	drainDone := make(chan struct{})
+	go func() {
+		defer close(drainDone)
+		buf := make([]byte, 4096)
+		for {
+			if _, rerr := r.Read(buf); rerr != nil {
+				return
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		w.Close()
+		os.Stdout = oldStdout
+		<-drainDone
+		r.Close()
+	})
+
+	tests := []struct {
+		name         string
+		event        any
+		newline      bool
+		wantTerminal bool
+		wantNewline  bool
+	}{
+		// Terminal events.
+		{"LoopCompleteEvent is terminal", &core.LoopCompleteEvent{}, false, true, false},
+		{"LoopFailedEvent is terminal", &core.LoopFailedEvent{}, false, true, false},
+		{"LoopCancelledEvent is terminal", &core.LoopCancelledEvent{}, false, true, false},
+
+		// AIResponseEvent sets updatedNewline = true.
+		{"AIResponseEvent sets newline", &core.AIResponseEvent{Text: "hi"}, false, false, true},
+
+		// Non-terminal events reset newline to false.
+		{"LoopStartEvent not terminal", &core.LoopStartEvent{Config: cfg}, false, false, false},
+		{"IterationStartEvent not terminal", &core.IterationStartEvent{Iteration: 1, MaxIterations: 5}, false, false, false},
+		{"IterationCompleteEvent not terminal", &core.IterationCompleteEvent{Iteration: 1}, false, false, false},
+		{"PromiseDetectedEvent not terminal", &core.PromiseDetectedEvent{Phrase: "done"}, false, false, false},
+		{"ErrorEvent not terminal", &core.ErrorEvent{Error: errors.New("oops")}, false, false, false},
+		{"ToolExecutionStartEvent not terminal", &core.ToolExecutionStartEvent{ToolEvent: core.ToolEvent{ToolName: "x", Iteration: 1}}, false, false, false},
+		{"ToolExecutionEvent success not terminal", &core.ToolExecutionEvent{ToolEvent: core.ToolEvent{ToolName: "x", Iteration: 1}}, false, false, false},
+		{"VerifyResultEvent success not terminal", &core.VerifyResultEvent{Success: true, Duration: time.Millisecond}, false, false, false},
+		{"NoChangesStopEvent not terminal", &core.NoChangesStopEvent{Threshold: 3}, false, false, false},
+		{"ErrorStopEvent not terminal", &core.ErrorStopEvent{Threshold: 3}, false, false, false},
+		{"StallStopEvent not terminal", &core.StallStopEvent{Threshold: 3}, false, false, false},
+		{"CheckpointSavedEvent not terminal", &core.CheckpointSavedEvent{Path: "x.json", Iteration: 1}, false, false, false},
+
+		// ToolExecutionEvent error preserves the caller's newline state.
+		{"ToolExecutionEvent error preserves newline=false", &core.ToolExecutionEvent{ToolEvent: core.ToolEvent{ToolName: "x", Iteration: 1}, Error: errors.New("fail")}, false, false, false},
+		{"ToolExecutionEvent error preserves newline=true", &core.ToolExecutionEvent{ToolEvent: core.ToolEvent{ToolName: "x", Iteration: 1}, Error: errors.New("fail")}, true, false, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotNL := displayEvent(tt.event, cfg, tt.newline)
+			assert.Equal(t, tt.wantTerminal, got, "terminal")
+			assert.Equal(t, tt.wantNewline, gotNL, "updatedNewline")
+		})
+	}
+}

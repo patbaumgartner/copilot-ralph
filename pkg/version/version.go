@@ -36,16 +36,22 @@ func init() {
 	if !ok {
 		return
 	}
+	applyBuildInfo(info)
+}
+
+func applyBuildInfo(info *debug.BuildInfo) {
+	if info == nil {
+		return
+	}
 	if v := info.Main.Version; v != "" && v != "(devel)" {
 		Version = strings.TrimPrefix(v, "v")
 	}
 	for _, s := range info.Settings {
 		switch s.Key {
 		case "vcs.revision":
+			Commit = s.Value
 			if len(s.Value) > 7 {
 				Commit = s.Value[:7]
-			} else {
-				Commit = s.Value
 			}
 		case "vcs.time":
 			BuildDate = s.Value

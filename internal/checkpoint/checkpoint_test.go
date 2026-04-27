@@ -90,3 +90,68 @@ func TestDeleteRemovesFile(t *testing.T) {
 		t.Fatalf("expected file removed, got %v", err)
 	}
 }
+
+func TestSaveRejectsEmptyPath(t *testing.T) {
+	if err := Save("", State{Prompt: "p"}); err == nil {
+		t.Fatalf("expected error for empty path")
+	}
+}
+
+func TestSaveReturnsMkdirError(t *testing.T) {
+	dir := t.TempDir()
+	parentFile := filepath.Join(dir, "not-a-dir")
+	if err := os.WriteFile(parentFile, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write parent: %v", err)
+	}
+
+	err := Save(filepath.Join(parentFile, "checkpoint.json"), State{Prompt: "p"})
+	if err == nil {
+		t.Fatalf("expected mkdir error")
+	}
+}
+
+func TestSaveReturnsRenameError(t *testing.T) {
+	dir := t.TempDir()
+	err := Save(dir, State{Prompt: "p"})
+	if err == nil {
+		t.Fatalf("expected rename error when target is a directory")
+	}
+}
+
+func TestLoadReportsReadAndParseErrors(t *testing.T) {
+	t.Run("missing", func(t *testing.T) {
+		_, err := Load(filepath.Join(t.TempDir(), "missing.json"))
+		if err == nil {
+			t.Fatalf("expected read error")
+		}
+	})
+
+	t.Run("invalid json", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "bad.json")
+		if err := os.WriteFile(path, []byte("{"), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		_, err := Load(path)
+		if err == nil {
+			t.Fatalf("expected parse error")
+		}
+	})
+}
+
+func TestDeleteEmptyPathIsNoop(t *testing.T) {
+	if err := Delete(""); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+}
+
+func TestDeleteReportsRemoveError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "child"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("write child: %v", err)
+	}
+
+	err := Delete(dir)
+	if err == nil {
+		t.Fatalf("expected delete error for non-empty directory")
+	}
+}

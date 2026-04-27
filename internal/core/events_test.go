@@ -32,6 +32,25 @@ func TestNewRateLimitWaitEvent(t *testing.T) {
 	assert.Equal(t, 3, ev.Iteration)
 }
 
+func TestSimpleEventConstructors(t *testing.T) {
+	plan := NewPlanUpdatedEvent("/tmp/fix_plan.md", 42, 2)
+	assert.Equal(t, "/tmp/fix_plan.md", plan.Path)
+	assert.Equal(t, 42, plan.Bytes)
+	assert.Equal(t, 2, plan.Iteration)
+
+	noChanges := NewNoChangesStopEvent(3, 7)
+	assert.Equal(t, 3, noChanges.Threshold)
+	assert.Equal(t, 7, noChanges.Iteration)
+
+	timeout := NewIterationTimeoutEvent(5*time.Second, 4)
+	assert.Equal(t, 5*time.Second, timeout.Timeout)
+	assert.Equal(t, 4, timeout.Iteration)
+
+	diff := NewWorkspaceDiffEvent("1 file changed", 6)
+	assert.Equal(t, "1 file changed", diff.Stat)
+	assert.Equal(t, 6, diff.Iteration)
+}
+
 func timeMustParse(s string) time.Time {
 	t, err := time.Parse(time.RFC3339, s)
 	if err != nil {

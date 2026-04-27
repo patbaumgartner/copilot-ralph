@@ -88,19 +88,15 @@ func init() {
 // applyPalette sets package-level Color variables from the chosen palette.
 // Exposed so tests can switch themes without forking a subprocess.
 func applyPalette(dark bool) {
+	p := lightPalette
 	if dark {
-		Primary = darkPalette.Primary
-		Success = darkPalette.Success
-		Warning = darkPalette.Warning
-		Error = darkPalette.Error
-		Info = darkPalette.Info
-	} else {
-		Primary = lightPalette.Primary
-		Success = lightPalette.Success
-		Warning = lightPalette.Warning
-		Error = lightPalette.Error
-		Info = lightPalette.Info
+		p = darkPalette
 	}
+	Primary = p.Primary
+	Success = p.Success
+	Warning = p.Warning
+	Error = p.Error
+	Info = p.Info
 	// Re-apply to derived Style variables.
 	TitleStyle = Style{codes: "1;" + string(Primary)}
 	SubTitleStyle = Style{codes: string(Primary)}

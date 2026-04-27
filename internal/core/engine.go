@@ -314,11 +314,11 @@ func (e *LoopEngine) executeIteration() (stop, fatal error) {
 	// Stall detection: stop if consecutive identical responses exceed the threshold.
 	if e.config.StallAfter > 0 {
 		responseText := strings.TrimSpace(responseBuf.String())
+		nextStalls := 0
 		if responseText != "" && responseText == strings.TrimSpace(e.lastResponse) {
-			e.consecutiveStalls++
-		} else {
-			e.consecutiveStalls = 0
+			nextStalls = e.consecutiveStalls + 1
 		}
+		e.consecutiveStalls = nextStalls
 		e.lastResponse = responseText
 		if e.consecutiveStalls >= e.config.StallAfter {
 			e.emit(NewStallStopEvent(e.config.StallAfter, iteration))

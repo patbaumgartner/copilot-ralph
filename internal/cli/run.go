@@ -208,7 +208,7 @@ func runLoop(cmd *cobra.Command, args []string) error {
 	// Resolve prompt from positional argument (text or path to .md/.markdown).
 	prompt, err := resolvePrompt(args[0])
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve prompt: %w", err)
 	}
 
 	if prompt == "" {
@@ -218,7 +218,7 @@ func runLoop(cmd *cobra.Command, args []string) error {
 	// Build loop configuration from flags
 	loopConfig, err := buildLoopConfig(prompt)
 	if err != nil {
-		return err
+		return fmt.Errorf("build loop config: %w", err)
 	}
 	return runLoopWithConfig(cmd, loopConfig)
 }
@@ -672,178 +672,187 @@ func buildEventSinks() (*eventsink.FanOut, error) {
 
 // displayEvents listens for loop events and displays them to stdout.
 func displayEvents(events <-chan any, cfg *core.LoopConfig) {
-	// var lastEvent any
 	var newline bool
-
 	for event := range events {
-		switch e := event.(type) {
-		case *core.LoopStartEvent:
-			fmt.Println()
-			fmt.Print(styles.TitleStyle.Render("▶ Loop started"))
-
-		case *core.IterationStartEvent:
-			fmt.Println()
-			fmt.Println(styles.SubTitleStyle.Render(fmt.Sprintf("━━━ Iteration %d/%d ━━━", e.Iteration, cfg.MaxIterations)))
-			fmt.Println()
-
-		case *core.AIResponseEvent:
-			// Print as we receive it for streaming effect
-			fmt.Print(e.Text)
-
-		case *core.ToolExecutionStartEvent:
-			// Print newline if previous event was AI response
-			if newline {
-				fmt.Println()
-			}
-
-			fmt.Println(styles.InfoStyle.Render(e.Info("🛠️")))
-
-		case *core.ToolExecutionEvent:
-			if e.Error != nil {
-				err := styles.ErrorStyle.Render(fmt.Sprintf("(%s)", e.Error))
-				fmt.Printf("%s %s\n", e.Info("❌"), err)
-				continue
-			}
-			fmt.Println(styles.SuccessStyle.Render(e.Info("✔️")))
-
-		case *core.IterationCompleteEvent:
-			// Print newline if previous event was AI response
-			if newline {
-				fmt.Println()
-			}
-
-			fmt.Println(styles.InfoStyle.Render(fmt.Sprintf("✓ Iteration %d complete", e.Iteration)))
-
-		case *core.PromiseDetectedEvent:
-			// Print newline if previous event was AI response
-			if newline {
-				fmt.Println()
-			}
-
-			fmt.Println(styles.SuccessStyle.Render(fmt.Sprintf("🎉 Promise detected: \"%s\"", e.Phrase)))
-
-		case *core.ErrorEvent:
-			// Print newline if previous event was AI response
-			if newline {
-				fmt.Println()
-			}
-
-			fmt.Println(styles.ErrorStyle.Render(fmt.Sprintf("✗ Error: %v", e.Error)))
-
-		case *core.RateLimitWaitEvent:
-			if newline {
-				fmt.Println()
-			}
-			fmt.Println(styles.WarningStyle.Render(formatRateLimitWait(e)))
-
-		case *core.PlanUpdatedEvent:
-			if newline {
-				fmt.Println()
-			}
-			fmt.Println(styles.InfoStyle.Render(fmt.Sprintf("📝 Plan updated: %s (%d bytes)", e.Path, e.Bytes)))
-
-		case *core.IterationTimeoutEvent:
-			if newline {
-				fmt.Println()
-			}
-			fmt.Println(styles.WarningStyle.Render(fmt.Sprintf("⏱ Iteration %d hit per-iteration timeout (%s)", e.Iteration, e.Timeout)))
-
-		case *core.NoChangesStopEvent:
-			if newline {
-				fmt.Println()
-			}
-			fmt.Println(styles.WarningStyle.Render(fmt.Sprintf("⛔ Stopping: %d consecutive iterations with no changes", e.Threshold)))
-
-		case *core.ErrorStopEvent:
-			if newline {
-				fmt.Println()
-			}
-			fmt.Println(styles.ErrorStyle.Render(fmt.Sprintf("⛔ Stopping: %d consecutive iterations with errors", e.Threshold)))
-
-		case *core.BlockedPhraseDetectedEvent:
-			if newline {
-				fmt.Println()
-			}
-			fmt.Println(styles.WarningStyle.Render(fmt.Sprintf("⛔ Blocked: model signalled it cannot proceed (phrase: %q)", e.Phrase)))
-
-		case *core.StallStopEvent:
-			if newline {
-				fmt.Println()
-			}
-			fmt.Println(styles.WarningStyle.Render(fmt.Sprintf("⛔ Stopping: %d consecutive identical responses (stall detected)", e.Threshold)))
-
-		case *core.VerifyResultEvent:
-			if newline {
-				fmt.Println()
-			}
-			if e.Success {
-				fmt.Println(styles.SuccessStyle.Render(fmt.Sprintf("✅ verify passed (%s)", e.Duration.Round(time.Millisecond))))
-			}
-			if !e.Success {
-				header := fmt.Sprintf("❌ verify failed (exit %d, %s)", e.ExitCode, e.Duration.Round(time.Millisecond))
-				if e.TimedOut {
-					header = fmt.Sprintf("❌ verify timed out (%s)", e.Duration.Round(time.Millisecond))
-				}
-				fmt.Println(styles.ErrorStyle.Render(header))
-				if strings.TrimSpace(e.Output) != "" {
-					fmt.Println(styles.InfoStyle.Render(strings.TrimRight(e.Output, "\n")))
-				}
-			}
-
-		case *core.AutoCommitEvent:
-			if newline {
-				fmt.Println()
-			}
-			tagSuffix := ""
-			if e.Tag != "" {
-				tagSuffix = fmt.Sprintf(" tag=%s", e.Tag)
-			}
-			fmt.Println(styles.SuccessStyle.Render(fmt.Sprintf("📦 auto-committed %s: %s%s", e.SHA, e.Message, tagSuffix)))
-
-		case *core.WorkspaceDiffEvent:
-			if newline {
-				fmt.Println()
-			}
-			fmt.Println(styles.InfoStyle.Render("📈 diff --stat:"))
-			fmt.Println(e.Stat)
-
-		case *core.OracleAdviceEvent:
-			if newline {
-				fmt.Println()
-			}
-			header := fmt.Sprintf("🔮 oracle (%s)", e.Model)
-			if e.Reason != "" {
-				header = fmt.Sprintf("%s — %s", header, e.Reason)
-			}
-			fmt.Println(styles.InfoStyle.Render(header))
-			fmt.Println(strings.TrimRight(e.Advice, "\n"))
-
-		case *core.CheckpointSavedEvent:
-			if newline {
-				fmt.Println()
-			}
-			fmt.Println(styles.InfoStyle.Render(fmt.Sprintf("💾 checkpoint saved: %s (iteration %d)", e.Path, e.Iteration)))
-
-		case *core.LoopCompleteEvent:
-			// Will be handled by summary
-			return
-
-		case *core.LoopFailedEvent:
-			// Will be handled by summary
-			return
-
-		case *core.LoopCancelledEvent:
-			// Print newline if previous event was AI response
-			if newline {
-				fmt.Println()
-			}
-
-			fmt.Println(styles.WarningStyle.Render("⚠ Loop cancelled"))
+		var terminal bool
+		terminal, newline = displayEvent(event, cfg, newline)
+		if terminal {
 			return
 		}
-
-		_, newline = event.(*core.AIResponseEvent)
 	}
+}
+
+// displayEvent renders a single loop event to stdout and reports whether
+// the caller should stop consuming events (terminal) and the updated
+// newline state (updatedNewline is true when the output left the cursor
+// without a trailing newline, as happens after an AIResponseEvent).
+// newline indicates whether the previous output left the cursor without a
+// trailing newline.
+func displayEvent(event any, cfg *core.LoopConfig, newline bool) (terminal bool, updatedNewline bool) {
+	switch e := event.(type) {
+	case *core.LoopStartEvent:
+		fmt.Println()
+		fmt.Print(styles.TitleStyle.Render("▶ Loop started"))
+
+	case *core.IterationStartEvent:
+		fmt.Println()
+		fmt.Println(styles.SubTitleStyle.Render(fmt.Sprintf("━━━ Iteration %d/%d ━━━", e.Iteration, cfg.MaxIterations)))
+		fmt.Println()
+
+	case *core.AIResponseEvent:
+		// Print as we receive it for streaming effect
+		fmt.Print(e.Text)
+
+	case *core.ToolExecutionStartEvent:
+		// Print newline if previous event was AI response
+		if newline {
+			fmt.Println()
+		}
+		fmt.Println(styles.InfoStyle.Render(e.Info("🛠️")))
+
+	case *core.ToolExecutionEvent:
+		if e.Error != nil {
+			errStr := styles.ErrorStyle.Render(fmt.Sprintf("(%s)", e.Error))
+			fmt.Printf("%s %s\n", e.Info("❌"), errStr)
+			// preserve newline state (matches original `continue` semantics)
+			return false, newline
+		}
+		fmt.Println(styles.SuccessStyle.Render(e.Info("✔️")))
+
+	case *core.IterationCompleteEvent:
+		// Print newline if previous event was AI response
+		if newline {
+			fmt.Println()
+		}
+		fmt.Println(styles.InfoStyle.Render(fmt.Sprintf("✓ Iteration %d complete", e.Iteration)))
+
+	case *core.PromiseDetectedEvent:
+		// Print newline if previous event was AI response
+		if newline {
+			fmt.Println()
+		}
+		fmt.Println(styles.SuccessStyle.Render(fmt.Sprintf("🎉 Promise detected: \"%s\"", e.Phrase)))
+
+	case *core.ErrorEvent:
+		// Print newline if previous event was AI response
+		if newline {
+			fmt.Println()
+		}
+		fmt.Println(styles.ErrorStyle.Render(fmt.Sprintf("✗ Error: %v", e.Error)))
+
+	case *core.RateLimitWaitEvent:
+		if newline {
+			fmt.Println()
+		}
+		fmt.Println(styles.WarningStyle.Render(formatRateLimitWait(e)))
+
+	case *core.PlanUpdatedEvent:
+		if newline {
+			fmt.Println()
+		}
+		fmt.Println(styles.InfoStyle.Render(fmt.Sprintf("📝 Plan updated: %s (%d bytes)", e.Path, e.Bytes)))
+
+	case *core.IterationTimeoutEvent:
+		if newline {
+			fmt.Println()
+		}
+		fmt.Println(styles.WarningStyle.Render(fmt.Sprintf("⏱ Iteration %d hit per-iteration timeout (%s)", e.Iteration, e.Timeout)))
+
+	case *core.NoChangesStopEvent:
+		if newline {
+			fmt.Println()
+		}
+		fmt.Println(styles.WarningStyle.Render(fmt.Sprintf("⛔ Stopping: %d consecutive iterations with no changes", e.Threshold)))
+
+	case *core.ErrorStopEvent:
+		if newline {
+			fmt.Println()
+		}
+		fmt.Println(styles.ErrorStyle.Render(fmt.Sprintf("⛔ Stopping: %d consecutive iterations with errors", e.Threshold)))
+
+	case *core.BlockedPhraseDetectedEvent:
+		if newline {
+			fmt.Println()
+		}
+		fmt.Println(styles.WarningStyle.Render(fmt.Sprintf("⛔ Blocked: model signalled it cannot proceed (phrase: %q)", e.Phrase)))
+
+	case *core.StallStopEvent:
+		if newline {
+			fmt.Println()
+		}
+		fmt.Println(styles.WarningStyle.Render(fmt.Sprintf("⛔ Stopping: %d consecutive identical responses (stall detected)", e.Threshold)))
+
+	case *core.VerifyResultEvent:
+		if newline {
+			fmt.Println()
+		}
+		if e.Success {
+			fmt.Println(styles.SuccessStyle.Render(fmt.Sprintf("✅ verify passed (%s)", e.Duration.Round(time.Millisecond))))
+		}
+		if !e.Success {
+			header := fmt.Sprintf("❌ verify failed (exit %d, %s)", e.ExitCode, e.Duration.Round(time.Millisecond))
+			if e.TimedOut {
+				header = fmt.Sprintf("❌ verify timed out (%s)", e.Duration.Round(time.Millisecond))
+			}
+			fmt.Println(styles.ErrorStyle.Render(header))
+			if strings.TrimSpace(e.Output) != "" {
+				fmt.Println(styles.InfoStyle.Render(strings.TrimRight(e.Output, "\n")))
+			}
+		}
+
+	case *core.AutoCommitEvent:
+		if newline {
+			fmt.Println()
+		}
+		tagSuffix := ""
+		if e.Tag != "" {
+			tagSuffix = fmt.Sprintf(" tag=%s", e.Tag)
+		}
+		fmt.Println(styles.SuccessStyle.Render(fmt.Sprintf("📦 auto-committed %s: %s%s", e.SHA, e.Message, tagSuffix)))
+
+	case *core.WorkspaceDiffEvent:
+		if newline {
+			fmt.Println()
+		}
+		fmt.Println(styles.InfoStyle.Render("📈 diff --stat:"))
+		fmt.Println(e.Stat)
+
+	case *core.OracleAdviceEvent:
+		if newline {
+			fmt.Println()
+		}
+		header := fmt.Sprintf("🔮 oracle (%s)", e.Model)
+		if e.Reason != "" {
+			header = fmt.Sprintf("%s — %s", header, e.Reason)
+		}
+		fmt.Println(styles.InfoStyle.Render(header))
+		fmt.Println(strings.TrimRight(e.Advice, "\n"))
+
+	case *core.CheckpointSavedEvent:
+		if newline {
+			fmt.Println()
+		}
+		fmt.Println(styles.InfoStyle.Render(fmt.Sprintf("💾 checkpoint saved: %s (iteration %d)", e.Path, e.Iteration)))
+
+	case *core.LoopCompleteEvent:
+		// Will be handled by summary
+		return true, false
+
+	case *core.LoopFailedEvent:
+		// Will be handled by summary
+		return true, false
+
+	case *core.LoopCancelledEvent:
+		// Print newline if previous event was AI response
+		if newline {
+			fmt.Println()
+		}
+		fmt.Println(styles.WarningStyle.Render("⚠ Loop cancelled"))
+		return true, false
+	}
+
+	_, updatedNewline = event.(*core.AIResponseEvent)
+	return false, updatedNewline
 }
 
 // printSummary displays the final loop summary.
@@ -879,8 +888,12 @@ func printSummary(result *core.LoopResult, startTime time.Time) {
 	fmt.Println()
 }
 
+var newCopilotClient = func(opts ...sdk.ClientOption) (core.SDKClient, error) {
+	return sdk.NewCopilotClient(opts...)
+}
+
 // createSDKClient creates an SDK client with the given configuration.
-func createSDKClient(loopConfig *core.LoopConfig) (*sdk.CopilotClient, error) {
+func createSDKClient(loopConfig *core.LoopConfig) (core.SDKClient, error) {
 	opts := []sdk.ClientOption{
 		sdk.WithModel(loopConfig.Model),
 		sdk.WithWorkingDir(loopConfig.WorkingDir),
@@ -903,7 +916,7 @@ func createSDKClient(loopConfig *core.LoopConfig) (*sdk.CopilotClient, error) {
 		opts = append(opts, sdk.WithSystemMessage(systemPrompt, "append"))
 	}
 
-	return sdk.NewCopilotClient(opts...)
+	return newCopilotClient(opts...)
 }
 
 // formatRateLimitWait builds a user-facing message describing a rate-limit

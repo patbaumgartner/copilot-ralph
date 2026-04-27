@@ -100,7 +100,7 @@ func TestIsDarkBackgroundVSCodeThemeKind(t *testing.T) {
 	t.Setenv("COLORFGBG", "15;0") // would normally mean dark
 
 	tests := []struct {
-		kind    string
+		kind     string
 		wantDark bool
 	}{
 		{"vscode-light", false},

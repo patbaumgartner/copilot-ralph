@@ -70,7 +70,7 @@ func PorcelainStatus(ctx context.Context, dir string) (string, error) {
 func IsClean(ctx context.Context, dir string) (bool, error) {
 	status, err := PorcelainStatus(ctx, dir)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("is clean: %w", err)
 	}
 	return status == "", nil
 }
@@ -149,7 +149,7 @@ func CommitAll(ctx context.Context, dir, message string) (string, error) {
 // the tag already exists.
 func CreateTag(ctx context.Context, dir, tag, message string) error {
 	if err := ensureGit(); err != nil {
-		return err
+		return fmt.Errorf("create tag: %w", err)
 	}
 	checkCmd := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "-q", "--verify", "refs/tags/"+tag)
 	if err := checkCmd.Run(); err == nil {
