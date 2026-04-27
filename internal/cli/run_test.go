@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"testing"
@@ -226,4 +228,105 @@ func TestValidateSettingsNewFlags(t *testing.T) {
 		cfg.IterationDelay = 0
 		assert.NoError(t, validateSettings(&cfg))
 	})
+}
+
+// TestExitErrorError verifies the Error() method on ExitError.
+func TestExitErrorError(t *testing.T) {
+	tests := []struct {
+		name    string
+		e       *ExitError
+		wantMsg string
+	}{
+		{"with wrapped error", &ExitError{Code: 1, Err: errors.New("boom")}, "boom"},
+		{"nil wrapped error falls back to code", &ExitError{Code: 3}, "exit code 3"},
+		{"zero code with no error", &ExitError{Code: 0}, "exit code 0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.wantMsg, tt.e.Error())
+		})
+	}
+}
+
+// TestExitErrorUnwrap verifies the Unwrap() method on ExitError.
+func TestExitErrorUnwrap(t *testing.T) {
+	inner := errors.New("inner error")
+	e := &ExitError{Code: 1, Err: inner}
+	assert.Equal(t, inner, e.Unwrap())
+	// nil Err → Unwrap returns nil
+	assert.Nil(t, (&ExitError{Code: 1}).Unwrap())
+}
+
+// TestExitErrorFor covers all branches of exitErrorFor.
+func TestExitErrorFor(t *testing.T) {
+	tests := []struct {
+		name     string
+		result   *core.LoopResult
+		wantNil  bool
+		wantCode int
+	}{
+		{
+			name:     "nil result → exitCancelled",
+			result:   nil,
+			wantCode: exitCancelled,
+		},
+		{
+			name:    "StateComplete → no error",
+			result:  &core.LoopResult{State: core.StateComplete},
+			wantNil: true,
+		},
+		{
+			name:     "StateBlocked → exitBlocked",
+			result:   &core.LoopResult{State: core.StateBlocked, Error: core.ErrLoopBlocked},
+			wantCode: exitBlocked,
+		},
+		{
+			name:     "StateCancelled → exitCancelled",
+			result:   &core.LoopResult{State: core.StateCancelled},
+			wantCode: exitCancelled,
+		},
+		{
+			name:     "StateFailed + DeadlineExceeded → exitTimeout",
+			result:   &core.LoopResult{State: core.StateFailed, Error: context.DeadlineExceeded},
+			wantCode: exitTimeout,
+		},
+		{
+			name:     "StateFailed + ErrLoopTimeout → exitTimeout",
+			result:   &core.LoopResult{State: core.StateFailed, Error: core.ErrLoopTimeout},
+			wantCode: exitTimeout,
+		},
+		{
+			name:     "StateFailed + ErrMaxIterations → exitMaxIterations",
+			result:   &core.LoopResult{State: core.StateFailed, Error: core.ErrMaxIterations},
+			wantCode: exitMaxIterations,
+		},
+		{
+			name:     "StateFailed + other error → exitFailed",
+			result:   &core.LoopResult{State: core.StateFailed, Error: errors.New("some error")},
+			wantCode: exitFailed,
+		},
+		{
+			name:     "StateFailed + nil error → exitFailed",
+			result:   &core.LoopResult{State: core.StateFailed},
+			wantCode: exitFailed,
+		},
+		{
+			name:     "unknown state → exitFailed",
+			result:   &core.LoopResult{State: core.StateIdle},
+			wantCode: exitFailed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := exitErrorFor(tt.result)
+			if tt.wantNil {
+				assert.NoError(t, err)
+				return
+			}
+			var exitErr *ExitError
+			require.ErrorAs(t, err, &exitErr)
+			assert.Equal(t, tt.wantCode, exitErr.Code)
+		})
+	}
 }
