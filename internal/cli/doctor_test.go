@@ -42,10 +42,15 @@ func TestCheckWorkingDirWritable(t *testing.T) {
 	require.NoError(t, os.Chdir(dir))
 	t.Cleanup(func() { _ = os.Chdir(old) })
 
+	// os.Getwd() resolves symlinks (e.g. /var → /private/var on macOS),
+	// so use it to get the canonical expected path instead of t.TempDir().
+	want, err := os.Getwd()
+	require.NoError(t, err)
+
 	c := checkWorkingDir()
 	assert.Equal(t, "working-dir", c.Name)
 	assert.True(t, c.Ok)
-	assert.Equal(t, dir, c.Status)
+	assert.Equal(t, want, c.Status)
 }
 
 func TestRunDoctorNoFailures(t *testing.T) {
