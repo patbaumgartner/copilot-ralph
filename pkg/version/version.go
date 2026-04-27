@@ -8,7 +8,10 @@
 // Go toolchain is read from runtime/debug.ReadBuildInfo as a fallback.
 package version
 
-import "runtime/debug"
+import (
+	"runtime/debug"
+	"strings"
+)
 
 // Build-time variables set via ldflags
 var (
@@ -34,7 +37,7 @@ func init() {
 		return
 	}
 	if v := info.Main.Version; v != "" && v != "(devel)" {
-		Version = v
+		Version = strings.TrimPrefix(v, "v")
 	}
 	for _, s := range info.Settings {
 		switch s.Key {

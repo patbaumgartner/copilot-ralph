@@ -22,12 +22,12 @@ var (
 		Long: `Ralph implements the "Ralph Wiggum" technique: drive an iterative
 loop against the GitHub Copilot SDK until the assistant signals completion,
 hits --max-iterations, hits --timeout, or you press Ctrl+C.`,
-		Version: version.Version,
 	}
 )
 
 // Execute runs the root command and returns any error.
 func Execute() error {
+	rootCmd.Version = version.Version
 	return rootCmd.Execute()
 }
 

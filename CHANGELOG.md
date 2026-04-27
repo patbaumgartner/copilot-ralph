@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-04-27
+
+### Fixed
+
+- `ralph --version` and `ralph version` now correctly display the module
+  version (e.g. `0.2.1`) when installed via `go install
+  github.com/patbaumgartner/copilot-ralph/cmd/ralph@v0.2.1`. Previously the
+  version reported was always `dev` because the `debug.ReadBuildInfo()`
+  fallback was not present in the module-proxy-cached v0.2.0 zip, and the
+  `v` prefix from the embedded build info was not stripped.
+- Terminal output colors adapt to the terminal background: a dark-background
+  palette (vibrant/neon) is used by default; a muted deep-color palette is
+  applied automatically when `COLORFGBG` indicates a light background.
+
 ## [0.2.0] - 2026-04-27
 
 ### Added
