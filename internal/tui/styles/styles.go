@@ -29,20 +29,35 @@ var darkPalette = struct {
 	Info:    "38;2;0;217;255",   // Bright Cyan
 }
 
-// Light-background palette (deep / saturated for readability on white).
+// Light-background palette (high-contrast for readability on white).
+// All colours satisfy WCAG AA (≥ 4.5:1) against a white background.
 var lightPalette = struct {
 	Primary, Success, Warning, Error, Info Color
 }{
-	Primary: "38;2;160;0;160", // Deep Magenta
-	Success: "38;2;0;128;0",   // Dark Green
-	Warning: "38;2;160;90;0",  // Dark Amber
-	Error:   "38;2;180;0;0",   // Dark Red
-	Info:    "38;2;0;100;180", // Dark Cerulean
+	Primary: "38;2;130;0;130", // Deep Violet  – contrast ~8:1
+	Success: "38;2;0;105;0",   // Forest Green – contrast ~7:1
+	Warning: "38;2;150;80;0",  // Burnt Amber  – contrast ~6:1
+	Error:   "38;2;180;0;0",   // Dark Red      – contrast ~6:1
+	Info:    "38;2;0;80;160",  // Navy Blue     – contrast ~7:1
 }
 
 // isDarkBackground reports whether the terminal appears to use a dark background.
-// It inspects COLORFGBG (format "fg;bg", bg < 8 → dark) and falls back to true.
+//
+// Detection order:
+//  1. VSCODE_THEME_KIND (set by VS Code for every integrated-terminal session).
+//  2. COLORFGBG (format "fg;bg", bg < 8 → dark; set by iTerm2 and most
+//     xterm-compatible emulators).
+//  3. Falls back to dark (the safer default for most developer environments).
 func isDarkBackground() bool {
+	// VS Code exposes the active theme kind to every integrated terminal.
+	switch os.Getenv("VSCODE_THEME_KIND") {
+	case "vscode-light", "vscode-high-contrast-light":
+		return false
+	case "vscode-dark", "vscode-high-contrast":
+		return true
+	}
+
+	// iTerm2, xterm, and many other emulators set COLORFGBG.
 	if v := os.Getenv("COLORFGBG"); v != "" {
 		parts := strings.Split(v, ";")
 		if len(parts) >= 2 {
@@ -52,6 +67,7 @@ func isDarkBackground() bool {
 			}
 		}
 	}
+
 	return true // default: assume dark background
 }
 

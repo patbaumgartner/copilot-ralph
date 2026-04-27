@@ -55,14 +55,16 @@ func TestApplyPaletteLight(t *testing.T) {
 	t.Cleanup(func() { applyPalette(true) })
 }
 
-// TestIsDarkBackgroundDefault verifies the default is dark when COLORFGBG is unset.
+// TestIsDarkBackgroundDefault verifies the default is dark when no env hints are set.
 func TestIsDarkBackgroundDefault(t *testing.T) {
 	t.Setenv("COLORFGBG", "")
-	assert.True(t, isDarkBackground(), "should default to dark when COLORFGBG is empty")
+	t.Setenv("VSCODE_THEME_KIND", "")
+	assert.True(t, isDarkBackground(), "should default to dark when no hint is present")
 }
 
 // TestIsDarkBackgroundDark verifies detection of dark backgrounds via COLORFGBG.
 func TestIsDarkBackgroundDark(t *testing.T) {
+	t.Setenv("VSCODE_THEME_KIND", "")
 	// bg value < 8 → dark
 	t.Setenv("COLORFGBG", "15;0")
 	assert.True(t, isDarkBackground())
@@ -73,6 +75,7 @@ func TestIsDarkBackgroundDark(t *testing.T) {
 
 // TestIsDarkBackgroundLight verifies detection of light backgrounds via COLORFGBG.
 func TestIsDarkBackgroundLight(t *testing.T) {
+	t.Setenv("VSCODE_THEME_KIND", "")
 	// bg value >= 8 → light
 	t.Setenv("COLORFGBG", "0;15")
 	assert.False(t, isDarkBackground())
@@ -83,9 +86,32 @@ func TestIsDarkBackgroundLight(t *testing.T) {
 
 // TestIsDarkBackgroundMalformed verifies fallback to dark when COLORFGBG is malformed.
 func TestIsDarkBackgroundMalformed(t *testing.T) {
+	t.Setenv("VSCODE_THEME_KIND", "")
 	t.Setenv("COLORFGBG", "notanumber")
 	assert.True(t, isDarkBackground(), "malformed COLORFGBG should fall back to dark")
 
 	t.Setenv("COLORFGBG", "15;abc")
 	assert.True(t, isDarkBackground(), "non-numeric bg should fall back to dark")
+}
+
+// TestIsDarkBackgroundVSCodeThemeKind verifies that VSCODE_THEME_KIND takes priority.
+func TestIsDarkBackgroundVSCodeThemeKind(t *testing.T) {
+	// VSCODE_THEME_KIND overrides COLORFGBG, so set a conflicting value.
+	t.Setenv("COLORFGBG", "15;0") // would normally mean dark
+
+	tests := []struct {
+		kind    string
+		wantDark bool
+	}{
+		{"vscode-light", false},
+		{"vscode-high-contrast-light", false},
+		{"vscode-dark", true},
+		{"vscode-high-contrast", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.kind, func(t *testing.T) {
+			t.Setenv("VSCODE_THEME_KIND", tt.kind)
+			assert.Equal(t, tt.wantDark, isDarkBackground())
+		})
+	}
 }
