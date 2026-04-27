@@ -1,0 +1,86 @@
+version: 2
+project_name: ralph
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: ralph
+    main: ./cmd/ralph
+    binary: ralph
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/patbaumgartner/copilot-ralph/pkg/version.Version={{.Version}}
+      - -X github.com/patbaumgartner/copilot-ralph/pkg/version.Commit={{.Commit}}
+      - -X github.com/patbaumgartner/copilot-ralph/pkg/version.BuildDate={{.Date}}
+      - -X github.com/patbaumgartner/copilot-ralph/pkg/version.GoVersion={{.Env.GOVERSION_LDF}}
+
+archives:
+  - id: default
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "Merge pull request"
+      - "Merge branch"
+  groups:
+    - title: Features
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: Bug fixes
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+    - title: Refactors
+      regexp: "^.*refactor[(\\w)]*:+.*$"
+      order: 2
+    - title: Other
+      order: 999
+
+release:
+  github:
+    owner: patbaumgartner
+    name: copilot-ralph
+  draft: false
+  prerelease: auto
+  mode: replace
+  header: |
+    ## Ralph {{ .Tag }}
+
+    Iterative AI development loop CLI built on the GitHub Copilot SDK.
+  footer: |
+    ---
+    **Full Changelog**: https://github.com/patbaumgartner/copilot-ralph/compare/{{ .PreviousTag }}...{{ .Tag }}
