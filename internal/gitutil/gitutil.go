@@ -70,7 +70,7 @@ func PorcelainStatus(ctx context.Context, dir string) (string, error) {
 func IsClean(ctx context.Context, dir string) (bool, error) {
 	status, err := PorcelainStatus(ctx, dir)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("is clean: %w", err)
 	}
 	return status == "", nil
 }

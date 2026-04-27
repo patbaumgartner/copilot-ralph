@@ -47,7 +47,7 @@ func runResume(cmd *cobra.Command, args []string) error {
 
 	cfg, err := buildLoopConfig(state.Prompt)
 	if err != nil {
-		return err
+		return fmt.Errorf("build loop config: %w", err)
 	}
 
 	// Restore values that the user did not explicitly override on the

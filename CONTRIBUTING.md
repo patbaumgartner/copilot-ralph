@@ -10,7 +10,9 @@ You need:
 - Go 1.26 or newer (matches `go.mod`).
 - The [GitHub Copilot CLI](https://github.com/github/copilot) on your `$PATH`
   if you want to exercise the SDK integration tests locally.
-- `golangci-lint` built with the same Go toolchain you use to develop.
+- `golangci-lint` **built with the same Go toolchain you use to develop**.
+  If `golangci-lint run` fails with a "Go language version is lower than
+  targeted" error, reinstall with `make dev-deps` using Go 1.26+.
 
 ```bash
 git clone https://github.com/patbaumgartner/copilot-ralph.git

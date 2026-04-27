@@ -84,7 +84,7 @@ clean: ## Clean build artifacts
 vuln: ## Scan for known vulnerabilities (govulncheck)
 	@if ! command -v govulncheck >/dev/null 2>&1; then \
 		echo "Installing govulncheck..."; \
-		go install golang.org/x/vuln/cmd/govulncheck@latest; \
+		go install golang.org/x/vuln/cmd/govulncheck@v1.3.0; \
 	fi
 	@govulncheck ./...
 
@@ -105,8 +105,8 @@ all: tidy fmt vet lint test build ## Run all checks and build
 # Development helpers
 dev-deps: ## Install development dependencies
 	@echo "Installing development dependencies..."
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-	go install golang.org/x/vuln/cmd/govulncheck@latest
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.11.4
+	go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
 	go install golang.org/x/tools/cmd/goimports@latest
 	@echo "Development dependencies installed"
 

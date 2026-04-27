@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-04-27
+
+### Fixed
+
+- Stall-detection counter now accumulates correctly across iterations; the
+  previous refactoring erroneously reset it to 0 each iteration so
+  `--stall-after` could never fire beyond the first duplicate response.
+- Removed two `else` blocks in `internal/core/engine.go` and
+  `internal/tui/styles/styles.go` that violated the project's no-`else`
+  convention.
+- Wrapped bare `return err` calls at cross-package boundaries in
+  `internal/cli/reset.go`, `internal/cli/resume.go`, and
+  `internal/gitutil/gitutil.go` with `fmt.Errorf("…: %w", err)`.
+
+### Added
+
+- Dependency-review GitHub Actions workflow (`.github/workflows/dependency-review.yml`)
+  fails PRs that introduce vulnerabilities of moderate severity or above.
+- Codecov coverage upload in CI and coverage badge in README.
+
+### Changed
+
+- `govulncheck` pinned to `v1.3.0` in CI workflow and `make dev-deps` to
+  ensure reproducible vulnerability scans.
+- `golangci-lint` pinned to `v2.11.4` in `make dev-deps`; CONTRIBUTING.md
+  updated with a note about the Go toolchain version requirement.
+- Test coverage for `internal/gitutil` improved to ~78% by adding tests for
+  `DiffStat`, `CommitAll`, and `CreateTag`.
+
 ## [0.2.2] - 2026-04-27
 
 ### Fixed
@@ -210,6 +239,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ralph version`: print build metadata (version, commit, build date,
   Go version).
 
-[Unreleased]: https://github.com/patbaumgartner/copilot-ralph/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/patbaumgartner/copilot-ralph/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/patbaumgartner/copilot-ralph/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/patbaumgartner/copilot-ralph/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/patbaumgartner/copilot-ralph/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/patbaumgartner/copilot-ralph/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/patbaumgartner/copilot-ralph/releases/tag/v0.1.0
